@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useCallback } from 'react'
+import { useMemo, useCallback, useEffect, useState } from 'react'
 import { usePublicClient } from 'wagmi'
 import type { Agent, ValidationStatus, AgentType, AgentCapability } from '@/types/agent'
 import { CONTRACTS, IDENTITY_REGISTRY_ABI } from '@/lib/contracts'
@@ -10,6 +10,7 @@ const agentsCache = new Map<number, { agents: Agent[]; totalCount: number }>()
 
 export function useAgents() {
   const publicClient = usePublicClient()
+  const [loading, setLoading] = useState(false)
 
   const fetchAgents = useCallback(async (): Promise<Agent[]> => {
     if (!publicClient) return []
@@ -138,13 +139,21 @@ export function useAgents() {
     }
   }, [publicClient])
 
+  // Auto-fetch on mount
+  useEffect(() => {
+    if (publicClient && !agentsCache.has(publicClient.chain?.id ?? 1)) {
+      setLoading(true)
+      fetchAgents().finally(() => setLoading(false))
+    }
+  }, [publicClient, fetchAgents])
+
   return useMemo(() => {
     const cached = publicClient?.chain?.id ? agentsCache.get(publicClient.chain.id) : undefined
     return {
       agents: cached?.agents ?? [] as Agent[],
       totalCount: cached?.totalCount ?? 0,
-      isLoading: false,
+      isLoading: loading || !cached,
       fetchAgents,
     }
-  }, [publicClient, fetchAgents])
+  }, [publicClient, fetchAgents, loading])
 }
