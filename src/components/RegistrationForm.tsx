@@ -44,6 +44,8 @@ export default function RegistrationForm() {
   const [ipfsUri, setIpfsUri] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [lastTx, setLastTx] = useState<string | null>(null)
+  const [lastName, setLastName] = useState<string>('')
 
   const updateField = <K extends keyof FormData>(key: K, value: FormData[K]) => {
     setFormData((prev) => ({ ...prev, [key]: value }))
@@ -117,7 +119,9 @@ export default function RegistrationForm() {
         args: [ipfsUri],
       })
 
-      setSuccess(`Registration submitted! Tx: ${hash}`)
+      setSuccess('✅ Agent registered successfully!')
+      setLastTx(hash)
+      setLastName(formData.name)
       setFormData(initialFormData)
       setIpfsUri(null)
     } catch (err) {
@@ -230,20 +234,43 @@ export default function RegistrationForm() {
           </pre>
         </div>
 
-        {/* Error / Success */}
+        {/* Success Card */}
+        {lastTx && (
+          <div className="rounded-lg border border-green-200 bg-green-50 p-4 sm:p-6 dark:border-green-900 dark:bg-green-950">
+            <p className="font-semibold text-green-700 dark:text-green-300 text-sm sm:text-base">
+              ✅ Agent Registered!
+            </p>
+            <p className="mt-1 text-xs sm:text-sm text-green-600 dark:text-green-400 break-words">
+              {lastName || 'Agent'} has been registered on ARC Testnet.
+            </p>
+            <div className="mt-3 flex flex-col sm:flex-row gap-2">
+              <a
+                href={`https://testnet.arcscan.app/tx/${lastTx}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex h-9 items-center justify-center rounded-lg bg-green-600 px-4 text-xs font-medium text-white shadow hover:bg-green-700 transition-colors"
+              >
+                View on Arcscan →
+              </a>
+              <button
+                onClick={() => { setSuccess(null); setLastTx(null); setLastName(''); }}
+                className="inline-flex h-9 items-center justify-center rounded-lg border border-green-300 px-4 text-xs font-medium text-green-700 hover:bg-green-100 transition-colors dark:border-green-700 dark:text-green-300"
+              >
+                Register Another
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Error */}
         {error && (
           <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600 dark:bg-red-950 dark:text-red-400">
             {error}
           </div>
         )}
-        {success && (
-          <div className="rounded-lg bg-green-50 p-3 text-sm text-green-600 dark:bg-green-950 dark:text-green-400">
-            {success}
-          </div>
-        )}
 
         {/* Actions */}
-        <div className="flex gap-3">
+        <div className="flex flex-col sm:flex-row gap-3">
           <Button
             variant="outline"
             onClick={handleUploadToIPFS}

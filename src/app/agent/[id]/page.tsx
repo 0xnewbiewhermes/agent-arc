@@ -92,7 +92,7 @@ export default function AgentDetailPage({
             </button>
           )}
           <Link
-            href={`https://arcscan.io/agent/${id}`}
+            href={`https://testnet.arcscan.app/address/${agent.owner}`}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-card px-6 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted"
