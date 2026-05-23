@@ -1,36 +1,32 @@
-export type AgentType = 'assistant' | 'tool' | 'workflow' | 'autonomous' | 'custom'
+export type AgentType = 'trading' | 'lending' | 'analyzer' | 'executor' | 'data' | 'other'
 
 export const AGENT_TYPES: AgentType[] = [
-  'assistant',
-  'tool',
-  'workflow',
-  'autonomous',
-  'custom',
+  'trading', 'lending', 'analyzer', 'executor', 'data', 'other',
 ]
 
 export type AgentCapability =
-  | 'chat'
-  | 'analysis'
-  | 'code-generation'
-  | 'image-generation'
-  | 'data-processing'
-  | 'automation'
-  | 'integration'
-  | 'search'
-  | 'translation'
-  | 'summarization'
+  | 'arbitrage_detection'
+  | 'liquidity_monitoring'
+  | 'automated_execution'
+  | 'risk_assessment'
+  | 'portfolio_management'
+  | 'data_analytics'
+  | 'smart_contract_audit'
+  | 'crosschain_bridge'
+  | 'yield_optimization'
+  | 'stop_loss_monitoring'
 
 export const AGENT_CAPABILITIES: AgentCapability[] = [
-  'chat',
-  'analysis',
-  'code-generation',
-  'image-generation',
-  'data-processing',
-  'automation',
-  'integration',
-  'search',
-  'translation',
-  'summarization',
+  'arbitrage_detection',
+  'liquidity_monitoring',
+  'automated_execution',
+  'risk_assessment',
+  'portfolio_management',
+  'data_analytics',
+  'smart_contract_audit',
+  'crosschain_bridge',
+  'yield_optimization',
+  'stop_loss_monitoring',
 ]
 
 export type ValidationStatus = 'pending' | 'validated' | 'failed'

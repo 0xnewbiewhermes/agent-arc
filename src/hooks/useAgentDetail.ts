@@ -20,7 +20,7 @@ export function useAgentDetail(id: string) {
     try {
       const tokenId = BigInt(id)
 
-      const [owner, tokenURI, validationStatusRaw] = await Promise.all([
+      const [owner, tokenURI] = await Promise.all([
         publicClient.readContract({
           address: CONTRACTS.IDENTITY_REGISTRY,
           abi: IDENTITY_REGISTRY_ABI,
@@ -33,19 +33,13 @@ export function useAgentDetail(id: string) {
           functionName: 'tokenURI',
           args: [tokenId],
         }),
-        publicClient.readContract({
-          address: CONTRACTS.VALIDATION_REGISTRY,
-          abi: VALIDATION_REGISTRY_ABI,
-          functionName: 'getValidationStatus',
-          args: [tokenId],
-        }).catch(() => 0),
       ])
 
       // Parse metadata
       let name = `Agent #${id}`
       let description = ''
       let image = ''
-      let type: AgentType = 'assistant'
+      let type: AgentType = 'other'
       let capabilities: AgentCapability[] = []
       let version = '1.0.0'
 
@@ -69,10 +63,7 @@ export function useAgentDetail(id: string) {
         }
       }
 
-      const valStatus: ValidationStatus =
-        validationStatusRaw === 0 ? 'pending'
-        : validationStatusRaw === 1 ? 'validated'
-        : 'failed'
+      const valStatus: ValidationStatus = 'pending'
 
       setAgent({
         id: tokenId,

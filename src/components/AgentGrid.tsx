@@ -98,11 +98,12 @@ export default function AgentGrid({ agents: propAgents }: AgentGridProps) {
           onChange={(e) => setTypeFilter(e.target.value)}
           options={[
             { value: 'all', label: 'All Types' },
-            { value: 'assistant', label: 'Assistant' },
-            { value: 'tool', label: 'Tool' },
-            { value: 'workflow', label: 'Workflow' },
-            { value: 'autonomous', label: 'Autonomous' },
-            { value: 'custom', label: 'Custom' },
+            { value: 'trading', label: 'Trading' },
+            { value: 'lending', label: 'Lending' },
+            { value: 'analyzer', label: 'Analyzer' },
+            { value: 'executor', label: 'Executor' },
+            { value: 'data', label: 'Data' },
+            { value: 'other', label: 'Other' },
           ]}
           className="sm:max-w-[160px]"
         />

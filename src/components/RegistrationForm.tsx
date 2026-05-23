@@ -28,7 +28,7 @@ const initialFormData: FormData = {
   name: '',
   description: '',
   image: '',
-  agentType: 'assistant',
+  agentType: 'other',
   capabilities: [],
   version: '1.0.0',
 }
@@ -110,13 +110,11 @@ export default function RegistrationForm() {
     setSuccess(null)
 
     try {
-      // The register function takes (to, tokenId) — we use our address and a new token ID
-      // In a real scenario, the contract might auto-assign or we'd compute the next ID
       const hash = await walletClient.writeContract({
         address: CONTRACTS.IDENTITY_REGISTRY,
         abi: IDENTITY_REGISTRY_ABI,
         functionName: 'register',
-        args: [address, BigInt(Math.floor(Math.random() * 1000000) + 1)],
+        args: [ipfsUri],
       })
 
       setSuccess(`Registration submitted! Tx: ${hash}`)

@@ -101,7 +101,7 @@ export function useMyAgents() {
           let name = `Agent #${tokenId}`
           let description = ''
           let image = ''
-          let type: AgentType = 'assistant'
+          let type: AgentType = 'other'
           let capabilities: AgentCapability[] = []
           let version = '1.0.0'
 

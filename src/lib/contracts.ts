@@ -7,99 +7,106 @@ export const CONTRACTS = {
 
 export const IDENTITY_REGISTRY_ABI = [
   {
-    inputs: [
-      { name: 'to', type: 'address', internalType: 'address' },
-      { name: 'tokenId', type: 'uint256', internalType: 'uint256' },
-    ],
     name: 'register',
-    outputs: [],
+    type: 'function',
     stateMutability: 'nonpayable',
-    type: 'function',
+    inputs: [{ name: 'metadataURI', type: 'string' }],
+    outputs: [],
   },
   {
-    inputs: [{ name: 'tokenId', type: 'uint256', internalType: 'uint256' }],
     name: 'ownerOf',
-    outputs: [{ name: '', type: 'address', internalType: 'address' }],
-    stateMutability: 'view',
     type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'tokenId', type: 'uint256' }],
+    outputs: [{ name: '', type: 'address' }],
   },
   {
-    inputs: [{ name: 'tokenId', type: 'uint256', internalType: 'uint256' }],
     name: 'tokenURI',
-    outputs: [{ name: '', type: 'string', internalType: 'string' }],
-    stateMutability: 'view',
     type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'tokenId', type: 'uint256' }],
+    outputs: [{ name: '', type: 'string' }],
   },
   {
-    anonymous: false,
-    inputs: [
-      {
-        indexed: true,
-        name: 'from',
-        type: 'address',
-        internalType: 'address',
-      },
-      {
-        indexed: true,
-        name: 'to',
-        type: 'address',
-        internalType: 'address',
-      },
-      {
-        indexed: true,
-        name: 'tokenId',
-        type: 'uint256',
-        internalType: 'uint256',
-      },
-    ],
     name: 'Transfer',
     type: 'event',
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: 'from', type: 'address' },
+      { indexed: true, name: 'to', type: 'address' },
+      { indexed: true, name: 'tokenId', type: 'uint256' },
+    ],
   },
 ] as const
 
 export const REPUTATION_REGISTRY_ABI = [
   {
-    inputs: [
-      { name: 'agentId', type: 'uint256', internalType: 'uint256' },
-      { name: 'score', type: 'uint8', internalType: 'uint8' },
-      { name: 'feedback', type: 'string', internalType: 'string' },
-    ],
     name: 'giveFeedback',
-    outputs: [],
-    stateMutability: 'nonpayable',
     type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'agentId', type: 'uint256' },
+      { name: 'score', type: 'int128' },
+      { name: 'feedbackType', type: 'uint8' },
+      { name: 'tag', type: 'string' },
+      { name: 'metadataURI', type: 'string' },
+      { name: 'evidenceURI', type: 'string' },
+      { name: 'comment', type: 'string' },
+      { name: 'feedbackHash', type: 'bytes32' },
+    ],
+    outputs: [],
+  },
+  {
+    name: 'FeedbackGiven',
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: 'agentId', type: 'uint256' },
+      { indexed: true, name: 'validator', type: 'address' },
+      { indexed: false, name: 'score', type: 'int128' },
+      { indexed: false, name: 'tag', type: 'string' },
+    ],
   },
 ] as const
 
 export const VALIDATION_REGISTRY_ABI = [
   {
-    inputs: [
-      { name: 'agentId', type: 'uint256', internalType: 'uint256' },
-      { name: 'requestData', type: 'string', internalType: 'string' },
-    ],
     name: 'validationRequest',
-    outputs: [],
-    stateMutability: 'nonpayable',
     type: 'function',
-  },
-  {
+    stateMutability: 'nonpayable',
     inputs: [
-      { name: 'agentId', type: 'uint256', internalType: 'uint256' },
-      { name: 'responseData', type: 'string', internalType: 'string' },
-      { name: 'passed', type: 'bool', internalType: 'bool' },
+      { name: 'validator', type: 'address' },
+      { name: 'agentId', type: 'uint256' },
+      { name: 'requestURI', type: 'string' },
+      { name: 'requestHash', type: 'bytes32' },
     ],
-    name: 'validationResponse',
     outputs: [],
-    stateMutability: 'nonpayable',
-    type: 'function',
   },
   {
-    inputs: [{ name: 'agentId', type: 'uint256', internalType: 'uint256' }],
-    name: 'getValidationStatus',
-    outputs: [
-      { name: 'status', type: 'uint8', internalType: 'uint8' },
-    ],
-    stateMutability: 'view',
+    name: 'validationResponse',
     type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'requestHash', type: 'bytes32' },
+      { name: 'response', type: 'uint8' },
+      { name: 'responseURI', type: 'string' },
+      { name: 'responseHash', type: 'bytes32' },
+      { name: 'tag', type: 'string' },
+    ],
+    outputs: [],
+  },
+  {
+    name: 'getValidationStatus',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'requestHash', type: 'bytes32' }],
+    outputs: [
+      { name: 'validatorAddress', type: 'address' },
+      { name: 'agentId', type: 'uint256' },
+      { name: 'response', type: 'uint8' },
+      { name: 'responseHash', type: 'bytes32' },
+      { name: 'tag', type: 'string' },
+      { name: 'lastUpdate', type: 'uint256' },
+    ],
   },
 ] as const
