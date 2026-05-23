@@ -23,7 +23,14 @@ export function useAgents() {
     }
 
     try {
-      // Get Transfer events from IdentityRegistry (minting = from zero address)
+      // Get latest block to chunk queries
+      const latestBlock = await publicClient.getBlockNumber()
+
+      // ARC RPC limits eth_getLogs to 10,000 block range
+      // Query last 10K blocks (covers ~2.8h, good for testnet MVP)
+      const BLOCK_RANGE = 10000n
+      const fromBlock = latestBlock > BLOCK_RANGE ? latestBlock - BLOCK_RANGE : 0n
+
       const transferLogs = await publicClient.getLogs({
         address: CONTRACTS.IDENTITY_REGISTRY,
         event: {
@@ -35,7 +42,7 @@ export function useAgents() {
             { indexed: true, name: 'tokenId', type: 'uint256' },
           ],
         },
-        fromBlock: BigInt(0),
+        fromBlock,
         toBlock: 'latest',
       })
 
