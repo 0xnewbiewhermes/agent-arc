@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useAccount } from 'wagmi'
 import type { Agent, AgentType, AgentCapability } from '@/types/agent'
 
-let cachedMyAgents: { address: string; agents: Agent[] } | null = null
+let cachedMyAgents: { address: string; agents: Agent[]; timestamp: number } | null = null
+const CACHE_TTL = 120_000
 
 export function useMyAgents() {
   const { address, isConnected } = useAccount()
@@ -18,8 +19,8 @@ export function useMyAgents() {
       return
     }
 
-    // Return cached result for same address
-    if (cachedMyAgents && cachedMyAgents.address === address.toLowerCase()) {
+    // Return cached result for same address (fresh)
+    if (cachedMyAgents && cachedMyAgents.address === address.toLowerCase() && Date.now() - cachedMyAgents.timestamp < CACHE_TTL) {
       setAgents(cachedMyAgents.agents)
       return
     }
@@ -52,7 +53,7 @@ export function useMyAgents() {
           updatedAt: Number(item.createdAt),
         }))
 
-      cachedMyAgents = { address: addr, agents: myAgents }
+      cachedMyAgents = { address: addr, agents: myAgents, timestamp: Date.now() }
       setAgents(myAgents)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch agents')

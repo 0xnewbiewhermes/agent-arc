@@ -1,18 +1,24 @@
 'use client'
 
-import { useMemo, useEffect, useState } from 'react'
+import { useMemo, useEffect, useState, useCallback } from 'react'
 import type { Agent, ValidationStatus, AgentType, AgentCapability } from '@/types/agent'
 
-const agentsCache = new Map<number, { agents: Agent[]; totalCount: number }>()
+const agentsCache = new Map<number, { agents: Agent[]; totalCount: number; timestamp: number }>()
+const CACHE_TTL = 120_000 // 2 minutes
 
 export function useAgents() {
   const [loading, setLoading] = useState(false)
 
-  const fetchAgents = async (): Promise<Agent[]> => {
+  const fetchAgents = useCallback(async (): Promise<Agent[]> => {
     const cacheKey = 5042002
-    if (agentsCache.has(cacheKey)) {
-      return agentsCache.get(cacheKey)!.agents
+    const cache = agentsCache.get(cacheKey)
+
+    // Use cache if fresh
+    if (cache && Date.now() - cache.timestamp < CACHE_TTL) {
+      return cache.agents
     }
+
+    setLoading(true)
 
     try {
       const res = await fetch('/api/agents')
@@ -36,29 +42,31 @@ export function useAgents() {
         updatedAt: Number(item.createdAt),
       }))
 
-      agentsCache.set(cacheKey, { agents, totalCount: agents.length })
+      agentsCache.set(cacheKey, { agents, totalCount: agents.length, timestamp: Date.now() })
       return agents
     } catch {
-      agentsCache.set(cacheKey, { agents: [], totalCount: 0 })
+      agentsCache.set(cacheKey, { agents: [], totalCount: 0, timestamp: Date.now() })
       return []
-    }
-  }
-
-  useEffect(() => {
-    const cacheKey = 5042002
-    if (!agentsCache.has(cacheKey)) {
-      setLoading(true)
-      fetchAgents().finally(() => setLoading(false))
+    } finally {
+      setLoading(false)
     }
   }, [])
 
+  // Auto-fetch on mount + auto-refresh every 2 min
+  useEffect(() => {
+    fetchAgents()
+    const interval = setInterval(fetchAgents, CACHE_TTL)
+    return () => clearInterval(interval)
+  }, [fetchAgents])
+
   return useMemo(() => {
     const cached = agentsCache.get(5042002)
+    const isStale = cached ? Date.now() - cached.timestamp > CACHE_TTL : true
     return {
       agents: cached?.agents ?? [] as Agent[],
       totalCount: cached?.totalCount ?? 0,
-      isLoading: loading || !cached,
+      isLoading: loading && (!cached || isStale),
       fetchAgents,
     }
-  }, [loading])
+  }, [loading, fetchAgents])
 }
