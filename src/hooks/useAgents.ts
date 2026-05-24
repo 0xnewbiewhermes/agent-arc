@@ -26,9 +26,8 @@ export function useAgents() {
       // Get latest block to chunk queries
       const latestBlock = await publicClient.getBlockNumber()
 
-      // ARC RPC limits eth_getLogs to 10,000 block range
-      // Query last 10K blocks (covers ~2.8h, good for testnet MVP)
-      const BLOCK_RANGE = 10000n
+      // ARC RPC limits eth_getLogs to 10,000 block range (strict: < 10K)
+      const BLOCK_RANGE = 9900n
       const fromBlock = latestBlock > BLOCK_RANGE ? latestBlock - BLOCK_RANGE : 0n
 
       const transferLogs = await publicClient.getLogs({
@@ -137,11 +136,12 @@ export function useAgents() {
       // Sort by creation time (newest first)
       agents.sort((a, b) => b.createdAt - a.createdAt)
 
-      // Cache results
+      // Cache results (even empty — avoids permanent loading state)
       agentsCache.set(cacheKey, { agents, totalCount: agents.length })
 
       return agents
     } catch {
+      agentsCache.set(cacheKey, { agents: [], totalCount: 0 })
       return []
     }
   }, [publicClient])

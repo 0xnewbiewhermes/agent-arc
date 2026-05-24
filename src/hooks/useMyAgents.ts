@@ -22,6 +22,11 @@ export function useMyAgents() {
     setError(null)
 
     try {
+      // Get latest block to chunk queries (ARC RPC limit: < 10K blocks)
+      const latestBlock = await publicClient.getBlockNumber()
+      const BLOCK_RANGE = 9900n
+      const fromBlock = latestBlock > BLOCK_RANGE ? latestBlock - BLOCK_RANGE : 0n
+
       // Get Transfer events where `to` is the connected wallet
       const transferLogs = await publicClient.getLogs({
         address: CONTRACTS.IDENTITY_REGISTRY,
@@ -35,7 +40,7 @@ export function useMyAgents() {
           ],
         },
         args: { to: address },
-        fromBlock: BigInt(0),
+        fromBlock,
         toBlock: 'latest',
       })
 
@@ -52,7 +57,7 @@ export function useMyAgents() {
           ],
         },
         args: { from: address },
-        fromBlock: BigInt(0),
+        fromBlock,
         toBlock: 'latest',
       })
 
