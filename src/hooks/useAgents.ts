@@ -7,10 +7,17 @@ import { CONTRACTS, IDENTITY_REGISTRY_ABI } from '@/lib/contracts'
 
 // In-memory cache for fetched agents (module-level)
 const agentsCache = new Map<number, { agents: Agent[]; totalCount: number }>()
+// Track scanned range to resume from where we left off
+const scannedRange = new Map<number, { scannedUpToBlock: bigint | null }>()
+
+const BLOCK_RANGE = 9900n
+const MAX_SCAN_DEPTH = 300000n // scan up to 300K blocks back
+const MIN_AGENTS = 50 // stop scanning once we found this many
 
 export function useAgents() {
   const publicClient = usePublicClient()
   const [loading, setLoading] = useState(false)
+  const [scanProgress, setScanProgress] = useState<string | null>(null)
 
   const fetchAgents = useCallback(async (): Promise<Agent[]> => {
     if (!publicClient) return []
@@ -22,69 +29,98 @@ export function useAgents() {
       return agentsCache.get(cacheKey)!.agents
     }
 
+    setScanProgress('Scanning blockchain...')
+
     try {
-      // Get latest block to chunk queries
       const latestBlock = await publicClient.getBlockNumber()
+      // tokenId → { owner, mintBlock }
+      const allTokens = new Map<bigint, { owner: `0x${string}`; mintBlock: bigint }>()
+      let currentTo = latestBlock
+      const minFrom = latestBlock > MAX_SCAN_DEPTH ? latestBlock - MAX_SCAN_DEPTH : 0n
 
-      // ARC RPC limits eth_getLogs to 10,000 block range (strict: < 10K)
-      const BLOCK_RANGE = 9900n
-      const fromBlock = latestBlock > BLOCK_RANGE ? latestBlock - BLOCK_RANGE : 0n
+      // Scan backward in 9,900-block chunks
+      while (currentTo > minFrom && allTokens.size < MIN_AGENTS) {
+        const from = currentTo > BLOCK_RANGE ? currentTo - BLOCK_RANGE : 0n
+        const safeFrom = from < minFrom ? minFrom : from
 
-      const transferLogs = await publicClient.getLogs({
-        address: CONTRACTS.IDENTITY_REGISTRY,
-        event: {
-          type: 'event',
-          name: 'Transfer',
-          inputs: [
-            { indexed: true, name: 'from', type: 'address' },
-            { indexed: true, name: 'to', type: 'address' },
-            { indexed: true, name: 'tokenId', type: 'uint256' },
-          ],
-        },
-        fromBlock,
-        toBlock: 'latest',
-      })
+        setScanProgress(`Scanning blocks ${safeFrom.toString()} → ${currentTo.toString()}...`)
 
-      // Deduplicate by tokenId (last transfer wins = current owner)
-      const tokenMap = new Map<
-        bigint,
-        { tokenId: bigint; owner: `0x${string}`; blockNumber: bigint }
-      >()
-      for (const log of transferLogs) {
-        const args = log.args as Record<string, unknown> | undefined
-        if (args && args.tokenId !== undefined && args.to !== undefined) {
-          const tokenId = args.tokenId as bigint
-          const to = args.to as `0x${string}`
-          tokenMap.set(tokenId, {
-            tokenId,
-            owner: to,
-            blockNumber: log.blockNumber ?? BigInt(0),
+        try {
+          const transferLogs = await publicClient.getLogs({
+            address: CONTRACTS.IDENTITY_REGISTRY,
+            event: {
+              type: 'event',
+              name: 'Transfer',
+              inputs: [
+                { indexed: true, name: 'from', type: 'address' },
+                { indexed: true, name: 'to', type: 'address' },
+                { indexed: true, name: 'tokenId', type: 'uint256' },
+              ],
+            },
+            fromBlock: safeFrom,
+            toBlock: currentTo,
           })
+
+          for (const log of transferLogs) {
+            const args = log.args as Record<string, unknown> | undefined
+            if (args && args.tokenId !== undefined && args.from !== undefined && args.to !== undefined) {
+              const tokenId = args.tokenId as bigint
+              const from = args.from as string
+              const to = args.to as `0x${string}`
+              const blockNumber = log.blockNumber ?? BigInt(0)
+
+              // Track owner (latest transfer wins)
+              allTokens.set(tokenId, { owner: to, mintBlock: blockNumber })
+
+              // If this is a mint (from=0x0), use blockNumber as creation
+              const existing = allTokens.get(tokenId)
+              if (from === '0x0000000000000000000000000000000000000000') {
+                // First time seeing this token — record mint block
+                if (!existing || blockNumber < existing.mintBlock) {
+                  allTokens.set(tokenId, { owner: to, mintBlock: blockNumber })
+                }
+              } else if (existing) {
+                // Regular transfer — update owner but keep earliest mintBlock
+                allTokens.set(tokenId, { owner: to, mintBlock: existing.mintBlock })
+              } else {
+                allTokens.set(tokenId, { owner: to, mintBlock: blockNumber })
+              }
+            }
+          }
+        } catch {
+          // Chunk failed (rate limit?), continue to next
         }
+
+        if (safeFrom === 0n) break
+        currentTo = safeFrom - 1n
       }
 
-      const agents: Agent[] = []
+      setScanProgress(`Fetching metadata for ${allTokens.size} agents...`)
 
-      for (const [, info] of tokenMap) {
+      const agents: Agent[] = []
+      let i = 0
+      for (const [tokenId, info] of allTokens) {
+        i++
+        if (i % 10 === 0) {
+          setScanProgress(`Loading agent ${i}/${allTokens.size}...`)
+        }
+
         try {
-          // Fetch owner
           const owner = await publicClient.readContract({
             address: CONTRACTS.IDENTITY_REGISTRY,
             abi: IDENTITY_REGISTRY_ABI,
             functionName: 'ownerOf',
-            args: [info.tokenId],
+            args: [tokenId],
           })
 
-          // Fetch metadata URI
           const tokenURI = await publicClient.readContract({
             address: CONTRACTS.IDENTITY_REGISTRY,
             abi: IDENTITY_REGISTRY_ABI,
             functionName: 'tokenURI',
-            args: [info.tokenId],
+            args: [tokenId],
           })
 
-          // Parse metadata from URI
-          let name = `Agent #${info.tokenId}`
+          let name = `Agent #${tokenId}`
           let description = ''
           let image = ''
           let type: AgentType = 'other'
@@ -112,7 +148,7 @@ export function useAgents() {
           }
 
           agents.push({
-            id: info.tokenId,
+            id: tokenId,
             owner: owner as `0x${string}`,
             name,
             description,
@@ -124,8 +160,8 @@ export function useAgents() {
             reputation: null,
             validations: null,
             validationStatus: 'pending' as ValidationStatus,
-            createdAt: Number(info.blockNumber),
-            updatedAt: Number(info.blockNumber),
+            createdAt: Number(info.mintBlock),
+            updatedAt: Number(info.mintBlock),
           })
         } catch {
           // Skip if contract read fails
@@ -133,15 +169,16 @@ export function useAgents() {
         }
       }
 
-      // Sort by creation time (newest first)
-      agents.sort((a, b) => b.createdAt - a.createdAt)
+      agents.sort((a, b) => Number(b.id - a.id))
 
-      // Cache results (even empty — avoids permanent loading state)
       agentsCache.set(cacheKey, { agents, totalCount: agents.length })
+      scannedRange.set(cacheKey, { scannedUpToBlock: currentTo })
 
+      setScanProgress(null)
       return agents
     } catch {
       agentsCache.set(cacheKey, { agents: [], totalCount: 0 })
+      setScanProgress(null)
       return []
     }
   }, [publicClient])
@@ -160,7 +197,8 @@ export function useAgents() {
       agents: cached?.agents ?? [] as Agent[],
       totalCount: cached?.totalCount ?? 0,
       isLoading: loading || !cached,
+      scanProgress,
       fetchAgents,
     }
-  }, [publicClient, fetchAgents, loading])
+  }, [publicClient, fetchAgents, loading, scanProgress])
 }

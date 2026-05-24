@@ -6,7 +6,7 @@ import { Search, SlidersHorizontal } from 'lucide-react'
 import { useState } from 'react'
 
 export default function ExplorePage() {
-  const { agents, isLoading } = useAgents()
+  const { agents, isLoading, scanProgress } = useAgents()
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'name'>('newest')
 
@@ -60,10 +60,15 @@ export default function ExplorePage() {
 
         {/* Agent Grid */}
         {isLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="flex flex-col items-center gap-4">
+            {scanProgress && (
+              <p className="text-sm text-muted-foreground">{scanProgress}</p>
+            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="h-52 rounded-lg bg-muted animate-pulse" />
             ))}
+          </div>
           </div>
         ) : (
           <AgentGrid agents={filteredAgents} />

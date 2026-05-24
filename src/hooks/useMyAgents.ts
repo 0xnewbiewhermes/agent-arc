@@ -5,6 +5,9 @@ import { useAccount, usePublicClient } from 'wagmi'
 import type { Agent, AgentType, AgentCapability } from '@/types/agent'
 import { CONTRACTS, IDENTITY_REGISTRY_ABI } from '@/lib/contracts'
 
+const BLOCK_RANGE = 9900n
+const MAX_SCAN_DEPTH = 300000n
+
 export function useMyAgents() {
   const { address, isConnected } = useAccount()
   const publicClient = usePublicClient()
@@ -22,68 +25,86 @@ export function useMyAgents() {
     setError(null)
 
     try {
-      // Get latest block to chunk queries (ARC RPC limit: < 10K blocks)
       const latestBlock = await publicClient.getBlockNumber()
-      const BLOCK_RANGE = 9900n
-      const fromBlock = latestBlock > BLOCK_RANGE ? latestBlock - BLOCK_RANGE : 0n
+      // tokenId → { owner, mintBlock }
+      const myTokens = new Map<bigint, { mintBlock: bigint }>()
+      let currentTo = latestBlock
+      const minFrom = latestBlock > MAX_SCAN_DEPTH ? latestBlock - MAX_SCAN_DEPTH : 0n
 
-      // Get Transfer events where `to` is the connected wallet
-      const transferLogs = await publicClient.getLogs({
-        address: CONTRACTS.IDENTITY_REGISTRY,
-        event: {
-          type: 'event',
-          name: 'Transfer',
-          inputs: [
-            { indexed: true, name: 'from', type: 'address' },
-            { indexed: true, name: 'to', type: 'address' },
-            { indexed: true, name: 'tokenId', type: 'uint256' },
-          ],
-        },
-        args: { to: address },
-        fromBlock,
-        toBlock: 'latest',
-      })
+      // Scan backward in chunks for Transfer events TO user's address
+      while (currentTo > minFrom && myTokens.size < 20) {
+        const from = currentTo > BLOCK_RANGE ? currentTo - BLOCK_RANGE : 0n
+        const safeFrom = from < minFrom ? minFrom : from
 
-      // Get Transfer events where `from` is the wallet (transfers out)
-      const transferOutLogs = await publicClient.getLogs({
-        address: CONTRACTS.IDENTITY_REGISTRY,
-        event: {
-          type: 'event',
-          name: 'Transfer',
-          inputs: [
-            { indexed: true, name: 'from', type: 'address' },
-            { indexed: true, name: 'to', type: 'address' },
-            { indexed: true, name: 'tokenId', type: 'uint256' },
-          ],
-        },
-        args: { from: address },
-        fromBlock,
-        toBlock: 'latest',
-      })
+        // Transfer IN (to = user)
+        try {
+          const transferInLogs = await publicClient.getLogs({
+            address: CONTRACTS.IDENTITY_REGISTRY,
+            event: {
+              type: 'event',
+              name: 'Transfer',
+              inputs: [
+                { indexed: true, name: 'from', type: 'address' },
+                { indexed: true, name: 'to', type: 'address' },
+                { indexed: true, name: 'tokenId', type: 'uint256' },
+              ],
+            },
+            args: { to: address },
+            fromBlock: safeFrom,
+            toBlock: currentTo,
+          })
 
-      // Build set of tokenIds transferred out
-      const transferredOut = new Set<bigint>()
-      for (const log of transferOutLogs) {
-        const args = log.args as Record<string, unknown> | undefined
-        if (args && args.tokenId !== undefined) {
-          transferredOut.add(args.tokenId as bigint)
+          for (const log of transferInLogs) {
+            const args = log.args as Record<string, unknown> | undefined
+            if (args && args.tokenId !== undefined) {
+              const tokenId = args.tokenId as bigint
+              const blockNumber = log.blockNumber ?? BigInt(0)
+              // Only add if not already tracked
+              if (!myTokens.has(tokenId)) {
+                myTokens.set(tokenId, { mintBlock: blockNumber })
+              }
+            }
+          }
+        } catch {
+          // Chunk failed, continue
         }
-      }
 
-      // Filter to only tokens received and not transferred out
-      const userTokenIds = new Set<bigint>()
-      for (const log of transferLogs) {
-        const args = log.args as Record<string, unknown> | undefined
-        if (args && args.tokenId !== undefined && !transferredOut.has(args.tokenId as bigint)) {
-          userTokenIds.add(args.tokenId as bigint)
+        // Transfer OUT (from = user) — remove these
+        try {
+          const transferOutLogs = await publicClient.getLogs({
+            address: CONTRACTS.IDENTITY_REGISTRY,
+            event: {
+              type: 'event',
+              name: 'Transfer',
+              inputs: [
+                { indexed: true, name: 'from', type: 'address' },
+                { indexed: true, name: 'to', type: 'address' },
+                { indexed: true, name: 'tokenId', type: 'uint256' },
+              ],
+            },
+            args: { from: address },
+            fromBlock: safeFrom,
+            toBlock: currentTo,
+          })
+
+          for (const log of transferOutLogs) {
+            const args = log.args as Record<string, unknown> | undefined
+            if (args && args.tokenId !== undefined) {
+              myTokens.delete(args.tokenId as bigint)
+            }
+          }
+        } catch {
+          // Chunk failed, continue
         }
+
+        if (safeFrom === 0n) break
+        currentTo = safeFrom - 1n
       }
 
       const fetchedAgents: Agent[] = []
 
-      for (const tokenId of userTokenIds) {
+      for (const [tokenId, info] of myTokens) {
         try {
-          // Verify ownership
           const owner = await publicClient.readContract({
             address: CONTRACTS.IDENTITY_REGISTRY,
             abi: IDENTITY_REGISTRY_ABI,
@@ -91,10 +112,8 @@ export function useMyAgents() {
             args: [tokenId],
           })
 
-          // Only include if still owned by the user
           if ((owner as string).toLowerCase() !== address.toLowerCase()) continue
 
-          // Fetch token URI
           const tokenURI = await publicClient.readContract({
             address: CONTRACTS.IDENTITY_REGISTRY,
             abi: IDENTITY_REGISTRY_ABI,
@@ -102,7 +121,6 @@ export function useMyAgents() {
             args: [tokenId],
           })
 
-          // Parse metadata
           let name = `Agent #${tokenId}`
           let description = ''
           let image = ''
@@ -143,11 +161,10 @@ export function useMyAgents() {
             reputation: null,
             validations: null,
             validationStatus: 'pending',
-            createdAt: 0,
-            updatedAt: 0,
+            createdAt: Number(info.mintBlock),
+            updatedAt: Number(info.mintBlock),
           })
         } catch {
-          // Skip failed reads
           continue
         }
       }
