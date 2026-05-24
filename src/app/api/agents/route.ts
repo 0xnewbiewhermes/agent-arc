@@ -7,51 +7,19 @@ const BLOCK_RANGE = 9900n
 const MAX_SCAN_DEPTH = 200000n
 const MIN_AGENTS = 50
 
-const IDENTITY_ABI = [
-  {
-    name: 'ownerOf',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [{ name: 'tokenId', type: 'uint256' }],
-    outputs: [{ name: '', type: 'address' }],
-  },
-  {
-    name: 'tokenURI',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [{ name: 'tokenId', type: 'uint256' }],
-    outputs: [{ name: '', type: 'string' }],
-  },
-] as const
-
-// In-memory cache
-let cachedResponse: ResponseData | null = null
+let cachedAgents: ApiAgent[] | null = null
 let cacheTimestamp = 0
-const CACHE_TTL = 120_000 // 2 minutes
+const CACHE_TTL = 120_000
 
-interface ResponseData {
-  agents: AgentData[]
-  totalCount: number
-  scannedChunks: number
-  fromBlock: string
-  toBlock: string
-}
-
-interface AgentData {
+interface ApiAgent {
   tokenId: string
   owner: string
-  name: string
-  description: string
-  image: string
-  type: string
-  version: string
-  metadataUri: string
   createdAt: string
 }
 
 export async function GET() {
-  if (cachedResponse && Date.now() - cacheTimestamp < CACHE_TTL) {
-    return NextResponse.json({ ...cachedResponse, cached: true })
+  if (cachedAgents && Date.now() - cacheTimestamp < CACHE_TTL) {
+    return NextResponse.json({ agents: cachedAgents, totalCount: cachedAgents.length, cached: true })
   }
 
   try {
@@ -61,11 +29,9 @@ export async function GET() {
     })
 
     const latestBlock = await client.getBlockNumber()
-    const transferEvent = parseAbiItem(
-      'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)'
-    )
+    const transferEvent = parseAbiItem('event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)')
 
-    // Calculate all chunks
+    // Calculate chunks
     const chunks: { fromBlock: bigint; toBlock: bigint }[] = []
     let currentTo = latestBlock
     const minFrom = latestBlock > MAX_SCAN_DEPTH ? latestBlock - MAX_SCAN_DEPTH : 0n
@@ -78,7 +44,7 @@ export async function GET() {
       currentTo = safeFrom - 1n
     }
 
-    // Fire all chunk queries in parallel
+    // Parallel chunk scanning
     const chunkResults = await Promise.allSettled(
       chunks.map((chunk) =>
         client.getLogs({
@@ -90,9 +56,9 @@ export async function GET() {
       )
     )
 
-    // Collect unique tokenIds
-    type TokenInfo = { owner: string; blockNumber: bigint }
-    const tokenMap = new Map<string, TokenInfo>()
+    // Collect unique tokenIds (last owner wins)
+    const tokenMap = new Map<string, string>() // tokenId → owner
+    const blockMap = new Map<string, bigint>() // tokenId → blockNumber
 
     for (const result of chunkResults) {
       if (result.status === 'rejected') continue
@@ -100,93 +66,31 @@ export async function GET() {
         const args = log.args as Record<string, unknown> | undefined
         if (!args || !args.tokenId) continue
         const tokenId = args.tokenId.toString()
-        const to = (args.to as string)?.toLowerCase() || ''
-        tokenMap.set(tokenId, {
-          owner: to,
-          blockNumber: log.blockNumber ?? BigInt(0),
-        })
-      }
-    }
-
-    // Sort by tokenId descending (newest first), take top MIN_AGENTS
-    const sortedTokens = Array.from(tokenMap.entries())
-      .sort((a, b) => Number(b[1].blockNumber) - Number(a[1].blockNumber))
-      .slice(0, Math.max(MIN_AGENTS, tokenMap.size))
-
-    // Fetch metadata for all agents in parallel (batches of 10)
-    const agents: AgentData[] = []
-    const batchSize = 10
-    const tokenEntries = Array.from(sortedTokens)
-
-    for (let start = 0; start < tokenEntries.length; start += batchSize) {
-      const batch = tokenEntries.slice(start, start + batchSize)
-      const batchResults = await Promise.allSettled(
-        batch.map(async ([tokenId, info]) => {
-          let name = `Agent #${tokenId}`
-          let description = ''
-          let image = ''
-          let type = 'other'
-          let version = '1.0.0'
-          let metadataUri = ''
-
-          try {
-            const uri = await client.readContract({
-              address: CONTRACT,
-              abi: IDENTITY_ABI,
-              functionName: 'tokenURI',
-              args: [BigInt(tokenId)],
-            })
-            metadataUri = uri
-
-            if (uri) {
-              const httpUri = uri.startsWith('ipfs://')
-                ? uri.replace('ipfs://', 'https://ipfs.io/ipfs/')
-                : uri
-              try {
-                const ipfsRes = await fetch(httpUri, { signal: AbortSignal.timeout(5000) })
-                if (ipfsRes.ok) {
-                  const meta = await ipfsRes.json()
-                  name = meta.name || name
-                  description = meta.description || ''
-                  image = meta.image || ''
-                  type = meta.agentType || type
-                  version = meta.version || '1.0.0'
-                }
-              } catch { /* IPFS fail */ }
-            }
-          } catch { /* contract read fail */ }
-
-          return {
-            tokenId,
-            owner: info.owner,
-            name,
-            description,
-            image,
-            type,
-            version,
-            metadataUri,
-            createdAt: info.blockNumber.toString(),
-          } satisfies AgentData
-        })
-      )
-
-      for (const result of batchResults) {
-        if (result.status === 'fulfilled') {
-          agents.push(result.value)
+        tokenMap.set(tokenId, (args.to as string)?.toLowerCase() || '')
+        if (log.blockNumber && !blockMap.has(tokenId)) {
+          blockMap.set(tokenId, log.blockNumber)
         }
       }
     }
 
-    cachedResponse = {
+    // Convert to sorted array
+    const agents: ApiAgent[] = Array.from(tokenMap.entries())
+      .map(([tokenId, owner]) => ({
+        tokenId,
+        owner,
+        createdAt: blockMap.get(tokenId)?.toString() || '0',
+      }))
+      .sort((a, b) => Number(b.createdAt) - Number(a.createdAt))
+
+    cachedAgents = agents
+    cacheTimestamp = Date.now()
+
+    return NextResponse.json({
       agents,
       totalCount: agents.length,
       scannedChunks: chunks.length,
-      fromBlock: minFrom.toString(),
-      toBlock: latestBlock.toString(),
-    }
-    cacheTimestamp = Date.now()
-
-    return NextResponse.json({ ...cachedResponse, cached: false })
+      cached: false,
+    })
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to fetch agents' },
