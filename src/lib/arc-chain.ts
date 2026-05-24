@@ -12,6 +12,9 @@ export const arcTestnet = defineChain({
     default: {
       http: ['https://rpc.testnet.arc.network'],
     },
+    public: {
+      http: ['https://rpc.testnet.arc.network'],
+    },
   },
   blockExplorers: {
     default: {
